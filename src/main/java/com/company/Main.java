@@ -4,16 +4,10 @@ import com.beust.jcommander.JCommander;
 import com.company.Jcommander.Parameters;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
 import org.apache.commons.compress.utils.IOUtils;
-import org.xml.sax.SAXException;
-
-import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,6 +16,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 
 public class Main {
+    public static List<File> inputs;
+    public static File output;
+    public static int threads;
+    public static boolean help;
+
     public static void main(String[] args) {
         Parameters parameters = new Parameters();
         try {
@@ -29,24 +28,25 @@ public class Main {
                     .addObject(parameters)
                     .build()
                     .parse(args);
-            if (parameters.help) {
+            inputs = parameters.inputs;
+            output = parameters.output;
+            threads = parameters.threads;
+            help = parameters.help;
+
+            if (help) {
                 //TODO print help info
             }
-
-            startXmlParser(parameters.inputs, parameters.threads);
-
+            long startTime = System.currentTimeMillis();
+            startXmlParser(inputs, threads);
+            long stopTime = System.currentTimeMillis();
+            System.out.println("Time:" + (stopTime - startTime) + " ms");
         }
         catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    static void measureTime(){
-        //TODO measure time
-        // startXmlParser();
-    }
-
-    static void startXmlParser(List<File> inputs, int numberOfThreads) throws IOException, ParserConfigurationException, SAXException, InterruptedException {
+    static void startXmlParser(List<File> inputs, int numberOfThreads) throws IOException, InterruptedException {
         WikiStats stats = new WikiStats();
         ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
         //TODO Split decompression and parsing into different tasks
@@ -70,43 +70,53 @@ public class Main {
         printStats(stats);
     }
 
-    private static void printStats(WikiStats stats) {
-        System.out.println("Топ-300 слов в заголовках статей:");
-        mapSortTop300(stats.getTitleWordFrequency());
-        System.out.println();
+    private static void printStats(WikiStats stats) throws IOException {
+        output.createNewFile();
+        FileWriter fileWriter = new FileWriter(output);
+        BufferedWriter bw = new BufferedWriter(fileWriter);
 
-        System.out.println("Топ-300 слов в статьях:");
-        mapSortTop300(stats.getTextWordFrequency());
-        System.out.println();
+        bw.write("Топ-300 слов в заголовках статей:\n");
+        mapSortTop300(stats.getTitleWordFrequency(), bw);
+        bw.newLine();
 
-        //TODO print first keys even if value=0
-        System.out.println("Распределение статей по размеру:");
-        mapSortTop(stats.getSizeSpread());
-        System.out.println();
+        bw.write("Топ-300 слов в статьях:\n");
+        mapSortTop300(stats.getTextWordFrequency(), bw);
+        bw.newLine();
 
-        System.out.println("Распределение статей по времени:");
-        mapSortTop(stats.getYearSpread());
+        var sizeEntries = new ArrayList<>(stats.getSizeSpread().entrySet());
+        mapSortTop(sizeEntries);
+        bw.write("Распределение статей по размеру:\n");
+        for (int i = 0; i < sizeEntries.get(0).getKey(); i++) {
+            bw.write(i + " " + 0);
+        }
+        for (var integerAtomicLongEntry : sizeEntries) {
+            bw.write(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue() + "\n");
+        }
+        bw.newLine();
+
+        var yearEntries = new ArrayList<>(stats.getYearSpread().entrySet());
+        mapSortTop(yearEntries);
+        bw.write("Распределение статей по времени:\n");
+        for (var integerAtomicLongEntry : yearEntries) {
+            bw.write(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue() + "\n");
+        }
+        bw.close();
     }
 
-    private static void mapSortTop(ConcurrentMap<Integer, AtomicLong> map) {
-        List<Map.Entry<Integer, AtomicLong>> entryList = new ArrayList<>(map.entrySet());
+    private static void mapSortTop(ArrayList<Map.Entry<Integer, AtomicLong>> entries) {
         Comparator<Map.Entry<Integer, AtomicLong>> valueComparator =
                 Comparator.comparingLong(Map.Entry::getKey);
-        entryList.sort(valueComparator);
-        for (var integerAtomicLongEntry : entryList) {
-            System.out.println(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue());
-        }
-
+        entries.sort(valueComparator);
     }
-    private static void mapSortTop300(ConcurrentMap<String, AtomicLong> map) {
+    private static void mapSortTop300(ConcurrentMap<String, AtomicLong> map, BufferedWriter bw) throws IOException {
         List<Map.Entry<String, AtomicLong>> entryList = new ArrayList<>(map.entrySet());
         Comparator<Map.Entry<String, AtomicLong>> valueComparator =
                 (e1, e2) -> Long.compare(e2.getValue().get(), e1.getValue().get());
         entryList.sort(valueComparator);
-        for (int i = 0; i < 300; i++) {
+        for (int i = 0; i < (Math.min(entryList.size(), 300)); i++) {
             AtomicLong freq = entryList.get(i).getValue();
             String words = entryList.get(i).getKey();
-            System.out.println(freq + " " + words);
+            bw.write(freq + " " + words + "\n");
         }
     }
 
@@ -116,6 +126,5 @@ public class Main {
         try (input; output) {
             IOUtils.copy(input, output);
         }
-        System.out.println("file converted");
     }
 }
