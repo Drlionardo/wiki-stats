@@ -1,49 +1,36 @@
 package com.company;
 
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class WikiStats {
-    private HashMap<String, Long> titleWordFrequency;
-    private HashMap<String, Long> textWordFrequency;
-    private HashMap<Integer, Long> yearSpread;
-    private HashMap<Integer, Long> sizeSpread;
+    private ConcurrentMap<String, AtomicLong> titleWordFrequency;
+    private ConcurrentMap<String, AtomicLong> textWordFrequency;
+    private ConcurrentMap<Integer, AtomicLong> yearSpread;
+    private ConcurrentMap<Integer, AtomicLong>  sizeSpread;
 
     public WikiStats() {
-        this.titleWordFrequency = new HashMap<>();
-        this.textWordFrequency = new HashMap<>();
-        this.yearSpread = new HashMap<>();
-        this.sizeSpread = new HashMap<>();
+        this.titleWordFrequency = new ConcurrentHashMap<>();
+        this.textWordFrequency = new ConcurrentHashMap<>();
+        this.yearSpread = new ConcurrentHashMap<>();
+        this.sizeSpread = new ConcurrentHashMap<>();
     }
 
-    public HashMap<String, Long> getTitleWordFrequency() {
+    public ConcurrentMap<String, AtomicLong> getTitleWordFrequency() {
         return titleWordFrequency;
     }
 
-    public void setTitleWordFrequency(HashMap<String, Long> titleWordFrequency) {
-        this.titleWordFrequency = titleWordFrequency;
-    }
-
-    public HashMap<String, Long> getTextWordFrequency() {
+    public ConcurrentMap<String, AtomicLong> getTextWordFrequency() {
         return textWordFrequency;
     }
 
-    public void setTextWordFrequency(HashMap<String, Long> textWordFrequency) {
-        this.textWordFrequency = textWordFrequency;
-    }
-
-    public HashMap<Integer, Long> getYearSpread() {
+    public ConcurrentMap<Integer, AtomicLong> getYearSpread() {
         return yearSpread;
     }
 
-    public void setYearSpread(HashMap<Integer, Long> yearSpread) {
-        this.yearSpread = yearSpread;
-    }
-
-    public HashMap<Integer, Long> getSizeSpread() {
+    public ConcurrentMap<Integer, AtomicLong> getSizeSpread() {
         return sizeSpread;
-    }
-
-    public void setSizeSpread(HashMap<Integer, Long> sizeSpread) {
-        this.sizeSpread = sizeSpread;
     }
 }

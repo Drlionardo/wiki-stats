@@ -7,6 +7,7 @@ import org.xml.sax.helpers.DefaultHandler;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class WikiHandler extends DefaultHandler {
 
@@ -18,9 +19,8 @@ public class WikiHandler extends DefaultHandler {
         return stats;
     }
 
-    @Override
-    public void startDocument() throws SAXException {
-        stats = new WikiStats();
+    public WikiHandler(WikiStats stats) {
+        this.stats = stats;
     }
 
     @Override
@@ -44,24 +44,15 @@ public class WikiHandler extends DefaultHandler {
         }
     }
 
-    private void sizeProcess(int bytes) {
-        int key = 0;
-        if(bytes!=0) {
-            while (bytes > 0) {
-                bytes /= 10;
-                key++;
-            }
-            key -= 1;
-        }
-        Long counter = stats.getSizeSpread().getOrDefault(key, 0L);
-        stats.getSizeSpread().put(key, counter + 1);
-    }
+
 
     @Override
     public void endElement(String uri, String localName, String qName) throws SAXException {
         switch (qName) {
             case "page":
-                System.out.println(counter);
+                if(counter%1000==0) {
+                    System.out.println(Thread.currentThread().getName() + "   " + counter);
+                }
                 break;
             case "title":
                 titleProcess(buffer.toString());
@@ -82,8 +73,8 @@ public class WikiHandler extends DefaultHandler {
         for(String word : words) {
             if(word.matches("[а-яА-я]{4,}")) {
                 word = word.toLowerCase();
-                Long count = stats.getTextWordFrequency().getOrDefault(word, 0L);
-                stats.getTextWordFrequency().put(word, count + 1);
+                stats.getTextWordFrequency().putIfAbsent(word, new AtomicLong(0));
+                stats.getTextWordFrequency().get(word).incrementAndGet();
             }
         }
     }
@@ -93,8 +84,8 @@ public class WikiHandler extends DefaultHandler {
         for(String word : words) {
             if(word.matches("[а-яА-я]{4,}")) {
                 word = word.toLowerCase();
-                Long count = stats.getTitleWordFrequency().getOrDefault(word, 0L);
-                stats.getTitleWordFrequency().put(word, count + 1);
+                stats.getTitleWordFrequency().putIfAbsent(word, new AtomicLong(0));
+                stats.getTitleWordFrequency().get(word).incrementAndGet();
             }
         }
     }
@@ -105,8 +96,22 @@ public class WikiHandler extends DefaultHandler {
         OffsetDateTime time = i.atOffset(ZoneOffset.UTC);
         Integer year = time.getYear();
 
-        Long count = stats.getYearSpread().getOrDefault(year, 0L);
-        stats.getYearSpread().put(year, count + 1);
+        stats.getYearSpread().putIfAbsent(year, new AtomicLong(0));
+        stats.getYearSpread().get(year).incrementAndGet();
+    }
+
+    private void sizeProcess(int bytes) {
+        int key = 0;
+        if(bytes!=0) {
+            while (bytes > 0) {
+                bytes /= 10;
+                key++;
+            }
+            key -= 1;
+        }
+
+        stats.getSizeSpread().putIfAbsent(key, new AtomicLong(0));
+        stats.getSizeSpread().get(key).incrementAndGet();
     }
 
     @Override
