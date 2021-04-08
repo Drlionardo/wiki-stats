@@ -24,17 +24,17 @@ public class Main {
     public static void main(String[] args) {
         Parameters parameters = new Parameters();
         try {
-            JCommander.newBuilder()
+            var jCommander = JCommander.newBuilder()
                     .addObject(parameters)
-                    .build()
-                    .parse(args);
+                    .build();
+            jCommander.parse(args);
             inputs = parameters.inputs;
             output = parameters.output;
             threads = parameters.threads;
             help = parameters.help;
 
             if (help) {
-                //TODO print help info
+                jCommander.usage();
             }
             long startTime = System.currentTimeMillis();
             startXmlParser(inputs, threads);
@@ -51,13 +51,14 @@ public class Main {
         ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
         //TODO Split decompression and parsing into different tasks
         for (File file : inputs) {
-            executor.submit(() -> {
+            executor.execute(() -> {
                 try {
                     SAXParserFactory factory = SAXParserFactory.newInstance();
                     SAXParser saxParser = factory.newSAXParser();
                     WikiHandler wikiHandler = new WikiHandler(stats);
                     decompressBz2(file,file.getAbsolutePath()+"decompressed");
                     saxParser.parse(file.getAbsolutePath()+"decompressed", wikiHandler);
+                    saxParser.parse(file.getAbsolutePath(), wikiHandler);
                 } catch (Exception ignored) {
                 }
             });
@@ -86,9 +87,6 @@ public class Main {
         var sizeEntries = new ArrayList<>(stats.getSizeSpread().entrySet());
         mapSortTop(sizeEntries);
         bw.write("Распределение статей по размеру:\n");
-        for (int i = 0; i < sizeEntries.get(0).getKey(); i++) {
-            bw.write(i + " " + 0);
-        }
         for (var integerAtomicLongEntry : sizeEntries) {
             bw.write(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue() + "\n");
         }
@@ -102,7 +100,7 @@ public class Main {
         }
         bw.close();
     }
-
+    //TODO Сортировка одинаковых по частоте слов по алфавиту
     private static void mapSortTop(ArrayList<Map.Entry<Integer, AtomicLong>> entries) {
         Comparator<Map.Entry<Integer, AtomicLong>> valueComparator =
                 Comparator.comparingLong(Map.Entry::getKey);
