@@ -2,13 +2,13 @@ import com.beust.jcommander.ParameterException;
 import com.company.Main;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -70,11 +70,18 @@ class AppTest {
         }
 
         private static void createTemporaryBzip2File(File file) throws IOException {
-            var input = new FileInputStream(file);
+            InputStream in = Files.newInputStream(file.toPath());
             File outputFile = new File (toBzip2Inputs(file.getName()));
-            outputFile.createNewFile();
-            var output =  new BZip2CompressorOutputStream(new FileOutputStream(outputFile));
-            IOUtils.copy(input, output);
+            OutputStream fout = Files.newOutputStream((outputFile.toPath()));
+            BufferedOutputStream out = new BufferedOutputStream(fout);
+            BZip2CompressorOutputStream bzOut = new BZip2CompressorOutputStream(out);
+            final byte[] buffer = new byte[4096];
+            int n = 0;
+            while (-1 != (n = in.read(buffer))) {
+                bzOut.write(buffer, 0, n);
+            }
+            bzOut.close();
+            in.close();
         }
 
     @Test
@@ -140,11 +147,10 @@ class AppTest {
 
     void testInputs(String xmlInputs, int threads) {
         var outputPrefix = xmlInputs.replace(",", "__");
-        var outputFileName = outputPrefix + ".actual.txt";
-
+        var outputFileName = Paths.get(TEMPORARY_DIRECTORY).resolve(outputPrefix + ".actual.txt").toString();
         String[] args = {
                 "--threads", Integer.toString(threads),
-                "--inputs", toBzip2Inputs(xmlInputs),
+                "--input", toBzip2Inputs(xmlInputs),
                 "--output", outputFileName
         };
         Main.main(args);
@@ -157,8 +163,8 @@ class AppTest {
     }
 
     private void assertFilesHaveSameContent(String expectedFileName, String actualFileName) throws IOException {
-        File actual = Paths.get(TEMPORARY_DIRECTORY).resolve(actualFileName).toFile();
+        File actual = new File(actualFileName);
         File expected = Paths.get(TEST_DATA_PATH).resolve(expectedFileName).toFile();
-        assertTrue(FileUtils.contentEquals(actual, expected));
+        assertTrue(FileUtils.contentEquals(expected, actual));
     }
 }

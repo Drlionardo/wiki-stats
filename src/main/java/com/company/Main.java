@@ -4,6 +4,8 @@ import com.beust.jcommander.JCommander;
 import com.company.Jcommander.Parameters;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
 import org.apache.commons.compress.utils.IOUtils;
+import org.xml.sax.XMLReader;
+
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.*;
@@ -16,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 
 public class Main {
-    public static List<File> inputs;
+    public static List<File> input;
     public static File output;
     public static int threads;
     public static boolean help;
@@ -28,7 +30,7 @@ public class Main {
                     .addObject(parameters)
                     .build();
             jCommander.parse(args);
-            inputs = parameters.inputs;
+            input = parameters.input;
             output = parameters.output;
             threads = parameters.threads;
             help = parameters.help;
@@ -37,11 +39,10 @@ public class Main {
                 jCommander.usage();
             }
             long startTime = System.currentTimeMillis();
-            startXmlParser(inputs, threads);
+            startXmlParser(input, threads);
             long stopTime = System.currentTimeMillis();
             System.out.println("Time:" + (stopTime - startTime) + " ms");
-        }
-        catch (Exception e) {
+        } catch (InterruptedException | IOException e) {
             e.printStackTrace();
         }
     }
@@ -54,12 +55,20 @@ public class Main {
             executor.execute(() -> {
                 try {
                     SAXParserFactory factory = SAXParserFactory.newInstance();
+                    factory.setXIncludeAware(true);
+                    factory.setNamespaceAware(true);
+
                     SAXParser saxParser = factory.newSAXParser();
+                    XMLReader xmlReader = saxParser.getXMLReader();
+                    xmlReader.setErrorHandler(new ErrorHandler());
                     WikiHandler wikiHandler = new WikiHandler(stats);
+                    xmlReader.setContentHandler(wikiHandler);
+
                     decompressBz2(file,file.getAbsolutePath()+"decompressed");
-                    saxParser.parse(file.getAbsolutePath()+"decompressed", wikiHandler);
-                    saxParser.parse(file.getAbsolutePath(), wikiHandler);
-                } catch (Exception ignored) {
+                    xmlReader.parse(file.getAbsolutePath()+"decompressed");
+                    //xmlReader.parse(file.getAbsolutePath());
+                } catch (Exception e) {
+                    System.out.println(e.getMessage());
                 }
             });
         }
@@ -67,7 +76,6 @@ public class Main {
         while (!executor.awaitTermination(24L, TimeUnit.HOURS)) {
             System.out.println("Not yet. Still waiting for termination");
         }
-
         printStats(stats);
     }
 
@@ -77,39 +85,45 @@ public class Main {
         BufferedWriter bw = new BufferedWriter(fileWriter);
 
         bw.write("Топ-300 слов в заголовках статей:\n");
-        mapSortTop300(stats.getTitleWordFrequency(), bw);
+        top300Printer(stats.getTitleWordFrequency(), bw);
         bw.newLine();
 
         bw.write("Топ-300 слов в статьях:\n");
-        mapSortTop300(stats.getTextWordFrequency(), bw);
+        top300Printer(stats.getTextWordFrequency(), bw);
         bw.newLine();
 
         var sizeEntries = new ArrayList<>(stats.getSizeSpread().entrySet());
-        mapSortTop(sizeEntries);
         bw.write("Распределение статей по размеру:\n");
-        for (var integerAtomicLongEntry : sizeEntries) {
-            bw.write(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue() + "\n");
-        }
+        statPrinter(stats.getSizeSpread(), bw, sizeEntries);
         bw.newLine();
 
         var yearEntries = new ArrayList<>(stats.getYearSpread().entrySet());
-        mapSortTop(yearEntries);
         bw.write("Распределение статей по времени:\n");
-        for (var integerAtomicLongEntry : yearEntries) {
-            bw.write(integerAtomicLongEntry.getKey() + " " + integerAtomicLongEntry.getValue() + "\n");
-        }
+        statPrinter(stats.getYearSpread(), bw, yearEntries);
         bw.close();
     }
-    //TODO Сортировка одинаковых по частоте слов по алфавиту
-    private static void mapSortTop(ArrayList<Map.Entry<Integer, AtomicLong>> entries) {
-        Comparator<Map.Entry<Integer, AtomicLong>> valueComparator =
-                Comparator.comparingLong(Map.Entry::getKey);
-        entries.sort(valueComparator);
+
+    private static void statPrinter(Map<Integer, AtomicLong> map, BufferedWriter bw, ArrayList<Map.Entry<Integer, AtomicLong>> yearEntries) throws IOException {
+        var minimalEntry = yearEntries.stream().min(Map.Entry.comparingByKey());
+        if(minimalEntry.isPresent()) {
+        int startYear = minimalEntry.get().getKey();
+        int lastYear = yearEntries.stream().max(Map.Entry.comparingByKey()).get().getKey();
+            for (int i = startYear; i <= lastYear; i++) {
+                long amount = map.getOrDefault(i,new AtomicLong(0)).get();
+                bw.write(i + " " + amount + "\n");
+            }
+        }
     }
-    private static void mapSortTop300(ConcurrentMap<String, AtomicLong> map, BufferedWriter bw) throws IOException {
+
+    private static void top300Printer(ConcurrentMap<String, AtomicLong> map, BufferedWriter bw) throws IOException {
         List<Map.Entry<String, AtomicLong>> entryList = new ArrayList<>(map.entrySet());
-        Comparator<Map.Entry<String, AtomicLong>> valueComparator =
-                (e1, e2) -> Long.compare(e2.getValue().get(), e1.getValue().get());
+        Comparator<Map.Entry<String, AtomicLong>> valueComparator = (e1, e2) -> {
+            if(e2.getValue().get()==e1.getValue().get()){
+                return e1.getKey().compareTo(e2.getKey());
+            } else {
+                return Long.compare(e2.getValue().get(), e1.getValue().get());
+            }
+        };
         entryList.sort(valueComparator);
         for (int i = 0; i < (Math.min(entryList.size(), 300)); i++) {
             AtomicLong freq = entryList.get(i).getValue();
