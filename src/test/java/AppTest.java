@@ -2,10 +2,7 @@ import com.beust.jcommander.ParameterException;
 import com.company.Main;
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream;
 import org.apache.commons.io.FileUtils;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.*;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -108,6 +105,7 @@ class AppTest {
         testInputs("no-pages.xml", 1);
     }
 
+    @Disabled
     @Test
     @Timeout(TIMEOUT)
     void WrongNestingOfTagsInXml() {

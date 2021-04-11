@@ -55,27 +55,21 @@ public class Main {
             executor.execute(() -> {
                 try {
                     SAXParserFactory factory = SAXParserFactory.newInstance();
-                    factory.setXIncludeAware(true);
-                    factory.setNamespaceAware(true);
-
+                    //Disable loading dtd load to speed up work
+                    factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
                     SAXParser saxParser = factory.newSAXParser();
                     XMLReader xmlReader = saxParser.getXMLReader();
-                    xmlReader.setErrorHandler(new ErrorHandler());
                     WikiHandler wikiHandler = new WikiHandler(stats);
                     xmlReader.setContentHandler(wikiHandler);
-
-                    decompressBz2(file,file.getAbsolutePath()+"decompressed");
-                    xmlReader.parse(file.getAbsolutePath()+"decompressed");
-                    //xmlReader.parse(file.getAbsolutePath());
+                    decompressBz2(file,file.getAbsolutePath()+".decompressed");
+                    xmlReader.parse(file.getAbsolutePath()+".decompressed");
                 } catch (Exception e) {
                     System.out.println(e.getMessage());
                 }
             });
         }
         executor.shutdown();
-        while (!executor.awaitTermination(24L, TimeUnit.HOURS)) {
-            System.out.println("Not yet. Still waiting for termination");
-        }
+        executor.awaitTermination(24L, TimeUnit.HOURS);
         printStats(stats);
     }
 
@@ -107,7 +101,8 @@ public class Main {
         var minimalEntry = yearEntries.stream().min(Map.Entry.comparingByKey());
         if(minimalEntry.isPresent()) {
         int startYear = minimalEntry.get().getKey();
-        int lastYear = yearEntries.stream().max(Map.Entry.comparingByKey()).get().getKey();
+        int lastYear = yearEntries.stream()
+                .max(Map.Entry.comparingByKey()).get().getKey();
             for (int i = startYear; i <= lastYear; i++) {
                 long amount = map.getOrDefault(i,new AtomicLong(0)).get();
                 bw.write(i + " " + amount + "\n");

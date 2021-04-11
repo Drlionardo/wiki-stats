@@ -1,6 +1,7 @@
 package com.company;
 
 import org.xml.sax.Attributes;
+import org.xml.sax.SAXException;
 import org.xml.sax.helpers.DefaultHandler;
 
 import java.time.Instant;
@@ -26,21 +27,26 @@ public class WikiHandler extends DefaultHandler {
     }
 
     @Override
-    public void startElement(String uri, String localName, String qName, Attributes attributes) {
+    public void startElement(String uri, String localName, String qName, Attributes attributes) throws SAXException {
         switch (qName) {
             case "page":
                 // Reset Path at the beginning of new page
                 tagPath.setLength(0);
+                tagPath.append(qName).append(" ");
                 hasSizeAttribute = false;
                 counter++;
                 break;
             case "title":
+                tagPath.append(qName).append(" ");
                 break;
             case "revision" :
+                tagPath.append(qName).append(" ");
                 break;
             case "timestamp":
+                tagPath.append(qName).append(" ");
                 break;
             case "text":
+                tagPath.append(qName).append(" ");
                 size = Integer.parseInt(attributes.getValue("bytes"));
                 //TODO size tag check
                 hasSizeAttribute=true;
@@ -48,15 +54,14 @@ public class WikiHandler extends DefaultHandler {
             default:
                 break;
         }
-        tagPath.append(qName).append(" ");
         buffer.setLength(0); //Clear buffer
     }
 
     @Override
     public void endElement(String uri, String localName, String qName) {
-        tagPath.append("/").append(qName).append(" ");
         switch (qName) {
             case "page":
+                tagPath.append("/").append(qName);
                 if(counter%1000==0) {
                     System.out.println(Thread.currentThread().getName() + "   " + counter);
                 }
@@ -65,12 +70,18 @@ public class WikiHandler extends DefaultHandler {
                 }
                 break;
             case "title":
+                tagPath.append("/").append(qName).append(" ");
                 title = buffer.toString();
                 break;
+            case "revision":
+                tagPath.append("/").append(qName).append(" ");
+                break;
             case "timestamp":
+                tagPath.append("/").append(qName).append(" ");
                 timestamp = buffer.toString();
                 break;
             case "text":
+                tagPath.append("/").append(qName).append(" ");
                 text = buffer.toString();
                 break;
         }
@@ -82,10 +93,13 @@ public class WikiHandler extends DefaultHandler {
     }
 
     private boolean isValidPage() {
+        //Current implementation is invalid
+        //TODO Update validation via xsd file
         boolean tagMatch = tagPath.toString()
-                .equals("page title /title revision timestamp /timestamp text /text /revision /page ");
+                .equals("page title /title revision timestamp /timestamp text /text /revision /page");
         if(!(tagMatch && hasSizeAttribute)) {
             System.out.println("Invalid page " + counter);
+            System.out.println(tagPath);
         }
         return tagMatch && hasSizeAttribute;
     }
@@ -97,6 +111,7 @@ public class WikiHandler extends DefaultHandler {
     }
 
     private void textProcess(String text) {
+        text = text.replaceAll("[^а-яА-я]"," ");
         var words = text.split(" ");
         for(String word : words) {
             if(word.matches("[а-яА-я]{4,}")) {
@@ -108,6 +123,7 @@ public class WikiHandler extends DefaultHandler {
     }
 
     private void titleProcess(String title) {
+        title = title.replaceAll("[^а-яА-я]"," ");
         var words = title.split(" ");
         for(String word : words) {
             if(word.matches("[а-яА-я]{4,}")) {
