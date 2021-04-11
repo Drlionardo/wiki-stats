@@ -7,19 +7,96 @@ import org.xml.sax.helpers.DefaultHandler;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class WikiHandler extends DefaultHandler {
+    private final static int THREAD_SIZE = 16;
     //TODO Split parsing and counting stats into different threads
     private final WikiStats stats;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(THREAD_SIZE);
+    Semaphore lock = new Semaphore(THREAD_SIZE * 2);
     private final StringBuilder buffer;
-    private int counter = 0;
+    private int id = 0;
     private final StringBuilder tagPath = new StringBuilder();
     private boolean hasSizeAttribute = false;
+
     private String text;
     private String title;
     private String timestamp;
     private int size;
+
+    class Task implements Runnable {
+        private String taskText;
+        private String taskTitle;
+        private String taskTimestamp;
+        private int taskSize;
+
+        public Task(String text, String title, String timestamp, int size) {
+            this.taskText = text;
+            this.taskTitle = title;
+            this.taskTimestamp = timestamp;
+            this.taskSize = size;
+        }
+
+        @Override
+        public void run() {
+            countStats();
+        }
+        private void countStats() {
+            textProcess(taskText);
+            titleProcess(taskTitle);
+            timestampProcess(taskTimestamp);
+            sizeProcess(taskSize);
+        }
+
+        private void textProcess(String text) {
+            text = text.replaceAll("[^а-яА-я]"," ");
+            var words = text.split(" ");
+            for(String word : words) {
+                if(word.matches("[а-яА-я]{4,}")) {
+                    word = word.toLowerCase();
+                    stats.getTextWordFrequency().putIfAbsent(word, new AtomicLong(0));
+                    stats.getTextWordFrequency().get(word).incrementAndGet();
+                }
+            }
+        }
+
+        private void titleProcess(String title) {
+            title = title.replaceAll("[^а-яА-я]"," ");
+            var words = title.split(" ");
+            for(String word : words) {
+                if(word.matches("[а-яА-я]{4,}")) {
+                    word = word.toLowerCase();
+                    stats.getTitleWordFrequency().putIfAbsent(word, new AtomicLong(0));
+                    stats.getTitleWordFrequency().get(word).incrementAndGet();
+                }
+            }
+        }
+
+        private void timestampProcess(String timestamp) {
+            Instant i = Instant.parse(timestamp);
+            OffsetDateTime time = i.atOffset(ZoneOffset.UTC);
+            Integer year = time.getYear();
+
+            stats.getYearSpread().putIfAbsent(year, new AtomicLong(0));
+            stats.getYearSpread().get(year).incrementAndGet();
+        }
+
+        private void sizeProcess(int bytes) {
+            int key = 0;
+            if(bytes!=0) {
+                while (bytes > 0) {
+                    bytes /= 10;
+                    key++;
+                }
+                key -= 1;
+            }
+
+            stats.getSizeSpread().putIfAbsent(key, new AtomicLong(0));
+            stats.getSizeSpread().get(key).incrementAndGet();
+        }
+    }
 
     public WikiHandler(WikiStats stats) {
         this.stats = stats;
@@ -34,7 +111,7 @@ public class WikiHandler extends DefaultHandler {
                 tagPath.setLength(0);
                 tagPath.append(qName).append(" ");
                 hasSizeAttribute = false;
-                counter++;
+                id++;
                 break;
             case "title":
                 tagPath.append(qName).append(" ");
@@ -62,11 +139,23 @@ public class WikiHandler extends DefaultHandler {
         switch (qName) {
             case "page":
                 tagPath.append("/").append(qName);
-                if(counter%1000==0) {
-                    System.out.println(Thread.currentThread().getName() + "   " + counter);
+                if(id %1000==0) {
+                    System.out.println(Thread.currentThread().getName() + "   " + id);
                 }
                 if(isValidPage()) {
-                    countStats();
+                    try {
+                        lock.acquire();
+                        Task currentTask = new Task(text, title, timestamp, size);
+                        executorService.submit(() -> {
+                            try {
+                                currentTask.run();
+                            } finally {
+                                lock.release();
+                            }
+                        });
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
                 }
                 break;
             case "title":
@@ -98,11 +187,23 @@ public class WikiHandler extends DefaultHandler {
         boolean tagMatch = tagPath.toString()
                 .equals("page title /title revision timestamp /timestamp text /text /revision /page");
         if(!(tagMatch && hasSizeAttribute)) {
-            System.out.println("Invalid page " + counter);
+            System.out.println("Invalid page " + id);
             System.out.println(tagPath);
         }
         return tagMatch && hasSizeAttribute;
     }
+
+    @Override
+    public void endDocument() throws SAXException {
+        executorService.shutdown();
+        try {
+            executorService.awaitTermination(24L, TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println("File parsed");
+    }
+
     private void countStats() {
         textProcess(text);
         titleProcess(title);
